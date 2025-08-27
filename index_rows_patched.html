@@ -304,6 +304,21 @@ function init(){
       const mode=document.querySelector('input[name="evMode"]:checked').value;
       singleRow.style.display = (mode==='single')?'grid':'none';
       rangeRows.style.display  = (mode==='range')?'block':'none';
+
+  window.EVENTS_USER    = EVENTS_USER;
+  window.saveUserEvents = saveUserEvents;
+
+// ② 원격 → 로컬로 내려올 때 한 방에 적용하는 함수
+  window.applyRemoteEvents = function(arr){
+    try{
+      EVENTS_USER = normalizeUserArray(Array.isArray(arr) ? arr : []);
+      saveUserEvents();           // localStorage + 메타 갱신
+      render(current);            // 화면 갱신
+    }catch(e){ console.warn('[sync] applyRemote', e); }
+  };
+
+// ③ 페이지가 먼저 켜져 있고 이미 로그인돼 있었다면 즉시 동기화 시작
+  window.startEventsSync?.(window.phhsAuth?.auth?.currentUser?.uid);
     });
   });
 
