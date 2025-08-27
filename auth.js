@@ -6,6 +6,7 @@ import {
   getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence,
   signInWithPopup, onAuthStateChanged, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 console.log("[auth] loaded");
 
@@ -23,6 +24,10 @@ const firebaseConfig = {
 // Firebase 초기화
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+  useFetchStreams: false
+});
 
 // 같은 브라우저에서 로그인 상태 유지
 setPersistence(auth, browserLocalPersistence).catch(console.warn);
@@ -96,13 +101,75 @@ function renderSignedIn(user){
   out.addEventListener("click", () => signOut(auth));
   box.append(who, out);
 }
+// === Firestore 동기화 (로그인 후 시작) ===
+function startEventsSync(uid){
+  if (!uid) return;
+
+  const ref = doc(db, "users", uid); // users/{uid} 문서에 events 배열 저장
+
+  // 1) 최초 동기화: 원격/로컬 중 유의미한 쪽을 채택
+  (async () => {
+    try{
+      const snap = await getDoc(ref);
+      const local = (typeof window.getUserEvents === 'function')
+        ? (window.getUserEvents() || [])
+        : (window.EVENTS_USER || []);
+
+      if (!snap.exists()){
+        await setDoc(ref, { events: local, updatedAt: Date.now() });
+      } else {
+        const remote = Array.isArray(snap.data()?.events) ? snap.data().events : [];
+        if (remote.length){
+          // 원격 -> 화면/로컬 반영
+          window.applyRemoteEvents?.(remote);
+        } else if (local.length){
+          // 원격 비어 있고 로컬 있으면 로컬을 업로드
+          await setDoc(ref, { events: local, updatedAt: Date.now() }, { merge: true });
+        }
+      }
+    }catch(e){ console.warn('[sync] initial', e); }
+  })();
+
+  // 2) 실시간 수신
+  if (window._unsubEvents) try{ window._unsubEvents(); }catch{}
+  window._unsubEvents = onSnapshot(ref, (snap) => {
+    const arr = Array.isArray(snap.data()?.events) ? snap.data().events : [];
+    window.applyRemoteEvents?.(arr);
+  });
+
+  // 3) 로컬 저장 → 클라우드로도 밀어넣기(래핑)
+  const origSave = window.saveUserEvents;
+  window.saveUserEvents = function(){
+    try{ origSave && origSave(); }catch{}
+    try{
+      const arr = (typeof window.getUserEvents === 'function')
+        ? (window.getUserEvents() || [])
+        : (window.EVENTS_USER || []);
+      setDoc(ref, { events: Array.isArray(arr) ? arr : [], updatedAt: Date.now() }, { merge: true });
+    }catch(e){ console.warn('[sync] push', e); }
+  };
+}
+
+function stopEventsSync(){
+  try{ window._unsubEvents && window._unsubEvents(); }catch{}
+}
+
+window.startEventsSync = startEventsSync;
+window.stopEventsSync  = stopEventsSync;
 
 // 로그인 상태 반영 + 도메인 강제
 onAuthStateChanged(auth, (user) => {
   const ok = !!user && (user.email || "").toLowerCase().endsWith("@"+ALLOWED_DOMAIN);
-  if (ok) renderSignedIn(user);
-  else    renderSignedOut();
+  if (ok){
+    renderSignedIn(user);
+    window.startEventsSync?.(user.uid);  // 🔔 로그인되면 동기화 시작
+  } else {
+    window.stopEventsSync?.();
+    renderSignedOut();
+  }
 });
+
 
 // 디버깅용
 window.phhsAuth = { auth, signOut, onAuthStateChanged };
+
