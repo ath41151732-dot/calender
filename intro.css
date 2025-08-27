@@ -1,0 +1,132 @@
+/* ===== Theme Vars ===== */
+:root{
+  --bg1:#0f172a; --bg2:#1e3a8a; --bg3:#3b82f6;
+  --glass:rgba(255,255,255,.12);
+  --glass-border:rgba(255,255,255,.18);
+  --text:#e5e7eb; --muted:#94a3b8; --accent:#facc15;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg1:#e0f2fe; --bg2:#bae6fd; --bg3:#93c5fd;
+    --glass:rgba(255,255,255,.6); --glass-border:rgba(255,255,255,.9);
+    --text:#0f172a; --muted:#334155;
+  }
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+/* Add global perspective for camera push */
+body{
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Malgun Gothic, Noto Sans KR, sans-serif;
+  color:var(--text);
+  overflow:hidden;
+  perspective: 1000px;
+  transform-style: preserve-3d;
+}
+
+/* CAMERA element: we animate this to simulate user being pulled forward */
+#camera{
+  position: relative;
+  width:100%; height:100%;
+  transform: translateZ(0) scale(1);
+  transform-style: preserve-3d;
+  will-change: transform, filter;
+}
+#camera.camera-in{
+  animation: cameraPush .85s cubic-bezier(.12,.9,.08,1) forwards;
+}
+@keyframes cameraPush{
+  0%   { transform: translateZ(0) scale(1); filter: none; }
+  35%  { transform: translateZ(180px) scale(1.18); filter: blur(0.5px) saturate(1.03); }
+  70%  { transform: translateZ(320px) scale(1.38); filter: blur(1.2px) saturate(1.08); }
+  100% { transform: translateZ(420px) scale(1.55); filter: blur(2px) saturate(1.12); }
+}
+
+/* ===== Background ===== */
+#bg{
+  position:fixed; inset:0; z-index:-3;
+  background: radial-gradient(1200px 800px at 70% -10%, var(--bg3) 0%, transparent 60%),
+              radial-gradient(900px 600px at 0% 100%, var(--bg2) 0%, transparent 60%),
+              linear-gradient(120deg, var(--bg1), #111827 60%);
+  filter: saturate(1.1);
+}
+@keyframes floatGlow{ 0%,100%{filter:hue-rotate(0) brightness(1)} 50%{filter:hue-rotate(25deg) brightness(1.1)} }
+@media (prefers-reduced-motion: no-preference){ #bg{animation: floatGlow 10s ease-in-out infinite} }
+
+/* ===== Cinematic projectile ===== */
+#fx{ position:fixed; inset:0; z-index:-2; pointer-events:none }
+#flash{ position:fixed; inset:0; z-index:-2; background:#fff; opacity:0; pointer-events:none }
+
+/* ===== Layout ===== */
+.stage{ position:relative; height:100dvh; display:grid; place-items:center; padding:24px }
+.card{
+  width:min(92vw, 640px);
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  border:1px solid var(--glass-border);
+  border-radius:24px; padding:28px 24px 22px;
+  backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: 0 20px 80px rgba(0,0,0,.35);
+  text-align:center; transform-style: preserve-3d;
+  transition: transform .3s ease, box-shadow .3s ease, background .3s ease, opacity .35s ease;
+  opacity:1;
+}
+.card.hidden{ opacity:0; transform: translateY(6px); pointer-events:none }
+
+.logo{ width:min(180px, 40vw); transform: translateZ(20px); animation: logoFloat 4.5s ease-in-out infinite; will-change: transform; user-select:none }
+@keyframes logoFloat{ 0%,100%{transform: translateY(0) translateZ(20px)} 50%{transform: translateY(-6px) translateZ(20px)} }
+
+.title{ font-size: clamp(24px, 4.2vw, 40px); margin: 12px 0 6px; font-weight: 900; letter-spacing:.2px }
+.subtitle{ margin: 0 0 16px; color:var(--muted) }
+
+.actions{ display:flex; gap:12px; justify-content:center; align-items:center; flex-wrap:wrap; margin:8px 0 6px }
+.btn{ position:relative; appearance:none; border:none; outline:none; padding:12px 18px; border-radius:14px; font-weight:800; cursor:pointer; transition: transform .12s ease, box-shadow .25s ease; will-change: transform }
+.btn.primary{ background: linear-gradient(180deg, var(--accent), #f59e0b); color:#111827; box-shadow: 0 10px 24px rgba(250,204,21,.45) }
+.btn:active{ transform: translateY(1px) scale(.995) }
+.btn.rippling::after{
+  content:""; position:absolute; inset:0; border-radius:inherit; transform: scale(0); opacity:.6;
+  background: radial-gradient(circle, rgba(255,255,255,.7) 0%, rgba(255,255,255,0) 60%);
+  animation:ripple .6s ease forwards; pointer-events:none
+}
+@keyframes ripple{ to{ transform:scale(3); opacity:0 } }
+
+.skip{ font-size:.92rem; color:var(--muted); display:inline-flex; align-items:center; gap:6px }
+.tip{ font-size:.8rem; opacity:.7; margin-top:10px }
+.footer{ position:fixed; bottom:10px; left:0; right:0; text-align:center; font-size:.76rem; color:var(--muted) }
+
+/* ===== Vortex suck-in (center pull) ===== */
+#suck{
+  position:fixed; inset:0; z-index:9999; pointer-events:none;
+  display:grid; place-items:center;
+  opacity:0;
+}
+#suck .swirl{
+  position:absolute; width:160vmax; height:160vmax; border-radius:50%;
+  background:
+    conic-gradient(from 0deg, rgba(255,255,255,.0) 0 20%, rgba(255,255,255,.08) 20% 22%, rgba(255,255,255,0) 22% 40%,
+                              rgba(255,255,255,.10) 40% 42%, rgba(255,255,255,0) 42% 60%,
+                              rgba(255,255,255,.12) 60% 62%, rgba(255,255,255,0) 62% 80%,
+                              rgba(255,255,255,.15) 80% 82%, rgba(255,255,255,0) 82% 100%),
+    radial-gradient(closest-side, rgba(255,255,255,.2), rgba(255,255,255,0) 60%);
+  filter: blur(2px) saturate(1.1);
+  transform: scale(0.9);
+  opacity:.9;
+}
+#suck.active{ opacity:1; animation: suckFade .85s ease-out forwards; }
+#suck.active .swirl{ animation: swirlSpin .85s cubic-bezier(.12,.9,.1,1) forwards; }
+@keyframes swirlSpin{
+  0%{ transform: translateZ(0) scale(1) rotate(0deg) }
+  55%{ transform: translateZ(0) scale(.28) rotate(380deg) }
+  100%{ transform: translateZ(0) scale(.001) rotate(560deg) }
+}
+@keyframes suckFade{ 0%{opacity:0} 15%{opacity:1} 100%{opacity:1} }
+
+#speedlines{
+  position:absolute; inset:0; width:100%; height:100%;
+  mix-blend-mode: screen;
+}
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce){
+  #camera.camera-in{ animation: none }
+  #suck .swirl{ animation: none !important }
+}

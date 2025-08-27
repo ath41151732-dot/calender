@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>학사 일정 달력 (시간표/수행/일정추가/저장 + Glow + 시간표 정규화)</title>
+<style>
+  :root{--bg:#0b0f19;--card:#111827;--text:#e5e7eb;--muted:#9ca3af;--accent:#4f46e5;--ring:rgba(79,70,229,.35);--today:#f59e0b;--holiday:#ef4444;--exam:#eab308;--school:#22c55e;--cell-gap: 6px;}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Noto Sans KR",Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{max-width:1100px;margin:24px auto;padding:12px}
+  .layout{display:grid;grid-template-columns:1.25fr .95fr;gap:16px}
+  @media (max-width:900px){.layout{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.03));border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:hidden}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .title{font-weight:800}
+  .controls{display:flex;gap:8px}
+  button{appearance:none;border:1px solid rgba(255,255,255,.12);background:#0f172a;color:var(--text);padding:9px 12px;border-radius:12px;cursor:pointer;font-weight:700}
+  button.primary{background:linear-gradient(180deg,var(--accent),#4338ca);border-color:transparent;box-shadow:0 8px 18px var(--ring)}
+
+.weekdays,
+.grid{
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr)); /* 칼같이 7등분 */
+  gap: var(--cell-gap);                              /* 간격 통일 */
+  padding: 10px 12px;                                /* 좌우 패딩 통일 */
+  box-sizing: border-box;
+  contain: layout paint;                             /* 모바일 렌더링 흔들림 방지 */
+}
+
+/* 헤더 칸 텍스트 보정(기존 .weekdays > div 있으면 이걸로 교체) */
+.weekdays > div{
+  text-align: center;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* 날짜 숫자 폭 균일화(기존 .day 규칙에 없으면 추가) */
+.day{ font-variant-numeric: tabular-nums; }
+
+  .weekdays div.active{color:#fff;font-weight:900;text-decoration:underline}
+  .grid{gap:6px;padding:10px 12px 8px}
+  .row .ops{position:absolute;top:8px;right:8px;display:flex;gap:6px}
+  .mini{padding:4px 8px;font-size:12px;border-radius:8px}
+  .danger{border-color:rgba(239,68,68,.35)!important;background:rgba(239,68,68,.08)!important}
+  .danger:hover{background:rgba(239,68,68,.16)!important}
+  :root{ /* 기존 변수들 옆에 추가 */
+  --personal:#38bdf8; /* 하늘색 느낌 */
+}
+.dot.personal{ background: var(--personal); }
+.fill.personal{ background: rgba(56,189,248,.18)!important; border-color: rgba(56,189,248,.35); }
+
+
+
+
+  .legend{display:flex;gap:12px;flex-wrap:wrap;padding:0 12px 16px 12px;color:#cbd5e1;font-size:12px;margin-top: 8px;}
+  .legend .item{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid rgba(255,255,255,.08);border-radius:999px;background:rgba(255,255,255,.03)}
+  .legend .dot{width:10px;height:10px;border-radius:50%}
+
+  .cell{position:relative;aspect-ratio:1/1;border-radius:14px;padding:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);display:grid;grid-template-rows:auto 1fr;align-items:start;transition:.15s}
+  .cell:hover{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.18)}
+  .day{font-weight:900;font-size:14px}
+  .muted{color:#64748b;opacity:.55}
+  .muted .events{display:none}
+  .today{outline:2px solid var(--today);outline-offset:2px}
+  .selected{outline:2px solid var(--accent);outline-offset:2px;background:rgba(79,70,229,.12)!important;border-color:rgba(79,70,229,.45)}
+  .events{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .dot.holiday{background:var(--holiday)} .dot.exam{background:var(--exam)} .dot.school{background:var(--school)}
+  .fill.holiday{background:rgba(239,68,68,.18)!important;border-color:rgba(239,68,68,.35)}
+  .fill.exam{background:rgba(234,179,8,.22)!important;border-color:rgba(234,179,8,.35)}
+  .fill.school{background:rgba(34,197,94,.18)!important;border-color:rgba(34,197,94,.35)}
+
+  .panel-body{padding:12px}
+  #panelActions{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .list{display:grid;gap:10px;max-height:520px;overflow:auto;padding-right:6px}
+  .row{border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.03);cursor:pointer}
+  .row .k{font-size:12px;opacity:.8}
+  .row .t{font-weight:800}
+  .row .t .ext{margin-left:8px;font-size:12px;padding:2px 8px;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:rgba(255,255,255,.06);color:#e5e7eb;text-decoration:none}
+  .row .t .ext:hover{background:rgba(255,255,255,.12)}
+  .row .d{font-size:12px;color:#a1a1aa}
+  .row.active{outline:2px solid var(--accent);background:rgba(79,70,229,.12)}
+
+  /* 저장/불러오기 툴바 */
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}
+  .toolbar .meta{font-size:12px;opacity:.7;align-self:center}
+
+  /* === 근접 Glow 버튼 효과 === */
+  .glow{
+    position:relative; overflow:hidden;
+    transition: border-color .15s, background-color .15s, transform .12s;
+    will-change: transform, box-shadow;
+    border-color: rgba(255,255,255,.18);
+  }
+  .glow::before{
+    content:""; position:absolute; inset:-2px; border-radius:12px; pointer-events:none;
+    background: radial-gradient(140px circle at var(--x,50%) var(--y,50%),
+                 rgba(99,102,241,.35), rgba(99,102,241,0) 60%);
+    opacity: var(--p,0); transition: opacity .12s ease;
+  }
+  .glow{ box-shadow:
+      0 0 calc(var(--p,0)*16px) rgba(99,102,241,.55),
+      0 0 calc(var(--p,0)*28px) rgba(99,102,241,.32); }
+  .glow:active{ transform: translateY(1px); }
+
+  /* 공통 모달 */
+  .modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(0,0,0,.55);z-index:50}
+  .modal.show{display:grid}
+  .sheet{width:min(92vw,560px);background:#0b1220;border:1px solid rgba(255,255,255,.12);border-radius:16px;overflow:hidden}
+  .head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);font-weight:900}
+  .body{padding:14px;display:grid;gap:10px}
+  .row2{display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center}
+  select,input{background:#0f172a;border:1px solid rgba(255,255,255,.14);border-radius:10px;color:var(--text);padding:8px}
+  .actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+  .tt-result{margin-top:6px;border-top:1px dashed rgba(255,255,255,.15);padding-top:8px}
+  .tt-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .tt-period{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px}
+  .tt-period .p{font-size:12px;color:#94a3b8}
+  .tt-period .c{font-weight:800}
+  .hint{opacity:.75;font-size:12px}
+  .inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  :root{ --perform:#a78bfa; }  /* 보라색(수행평가) */
+.dot.perform{ background: var(--perform); }
+.fill.perform{ background: rgba(167,139,250,.18)!important; border-color: rgba(167,139,250,.35); }
+@media (max-width: 400px){
+  :root{ --cell-gap: 4px; }      /* 칸 간격 살짝 축소 */
+  .weekdays{ font-size: 12px; }
+  .day{ font-size: 13px; }
+  .events .dot{ width: 6px; height: 6px; }
+}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+    <!-- 캘린더 -->
+    <section class="card">
+      <div class="header">
+        <div class="title" id="monthLabel">—</div>
+        <div class="controls">
+          <button id="prevBtn" aria-label="이전 달">◀</button>
+          <button id="todayBtn" class="primary">오늘</button>
+          <button id="nextBtn" aria-label="다음 달">▶</button>
+        </div>
+      </div>
+      <div class="weekdays" aria-hidden="true"></div>
+      <div class="grid" id="grid" aria-labelledby="monthLabel"></div>
+      <!-- 범례 -->
+      <div class="legend">
+        <div class="item"><span class="dot holiday"></span>휴일</div>
+        <div class="item"><span class="dot exam"></span>지필평가</div>
+        <div class="item"><span class="dot school"></span>학교행사</div>
+        <div class="item"><span class="dot personal"></span>개인일정</div>
+      </div>
+    </section>
+
+    <!-- 우측 패널 -->
+    <aside class="card">
+      <div class="header">
+        <div class="title" id="listTitle">— 일정</div>
+        <div data-list-note style="opacity:.7;font-size:12px">휴일·시험·행사</div>
+      </div>
+      <div class="panel-body">
+        <!-- 저장/불러오기 툴바 -->
+        <div class="toolbar">
+          <button id="btnExport">내보내기</button>
+          <button id="btnImport">가져오기</button>
+          <button id="btnClear">초기화</button>
+          <div class="meta" id="metaCount">저장된 사용자 일정: 0건</div>
+          <input type="file" id="importFile" accept="application/json" style="display:none"/>
+        </div>
+
+        <div id="panelActions"></div>
+        <div class="list" id="eventList"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- 시간표 모달 -->
+<div id="ttModal" class="modal" aria-hidden="true" role="dialog" aria-label="시간표 보기">
+  <div class="sheet">
+    <div class="head"><div>시간표 보기</div><button id="ttClose">✕</button></div>
+    <div class="body">
+      <div class="row2"><label for="ttGrade">학년</label><select id="ttGrade"><option value="1">1학년</option><option value="2">2학년</option><option value="3">3학년</option></select></div>
+      <div class="row2"><label for="ttClass">반</label><select id="ttClass"></select></div>
+      <div class="row2"><label for="ttWeekday">요일</label><input id="ttWeekday" type="text" readonly /></div>
+      <div class="actions">
+        <button id="ttLoad">시간표 불러오기</button>
+        <input id="ttFile" type="file" accept="application/json" style="display:none"/>
+        <button id="ttConfirm" class="primary">조회</button>
+      </div>
+      <div id="ttResult" class="tt-result"></div>
+      <div class="hint">* `timetable.json`이 이상해도 자동 정규화합니다. 필요하면 위 ‘시간표 불러오기’로 직접 JSON을 가져오세요.</div>
+    </div>
+  </div>
+</div>
+
+<!-- 내 수행 보기 모달 -->
+<div id="pfModal" class="modal" aria-hidden="true" role="dialog" aria-label="내 수행 보기">
+  <div class="sheet">
+    <div class="head"><div>내 수행 보기</div><button id="pfClose">✕</button></div>
+    <div class="body">
+      <div class="row2"><label for="pfSubject">과목</label>
+        <select id="pfSubject">
+          <option value="국어">국어</option>
+          <option value="영어">영어</option>
+          <option value="수학">수학</option>
+          <option value="화학">화학</option>
+        </select>
+      </div>
+      <div class="actions"><button id="pfOpen" class="primary">열기</button></div>
+      <div class="hint">* 영어만 링크가 연결되어 있어요. 다른 과목 링크도 알려주면 바로 붙여줄게!</div>
+    </div>
+  </div>
+</div>
+
+<!-- 일정 추가 모달 -->
+<div id="evModal" class="modal" aria-hidden="true" role="dialog" aria-label="일정 추가">
+  <div class="sheet">
+    <div class="head"><div>일정 추가</div><button id="evClose">✕</button></div>
+    <div class="body">
+      <div class="row2"><label for="evType">구분</label>
+        <select id="evType"><option value="holiday">휴일</option><option value="exam">지필평가</option><option value="school">학교행사</option><!-- 기존 3개 아래에 추가 -->
+<option value="personal">개인일정</option><option value="perform">수행평가</option>
+</select>
+<div class="row2" id="evTeacherRow" style="display:none">
+  <label for="evTeacherCode">선생코드</label>
+  <input id="evTeacherCode" type="password" inputmode="numeric" maxlength="8" placeholder="예: 0000">
+</div>
+
+      </div>
+      <div class="row2"><label for="evTitle">제목</label><input id="evTitle" placeholder="예: 중간고사 / 현장체험학습"/></div>
+      <div class="row2"><label>날짜 유형</label>
+        <div class="inline"><label><input type="radio" name="evMode" value="single" checked/> 단일 날짜</label><label><input type="radio" name="evMode" value="range"/> 기간</label></div>
+      </div>
+      <div class="row2" id="singleRow"><label for="evDate">날짜</label><input id="evDate" type="date"/></div>
+      <div id="rangeRows" style="display:none">
+        <div class="row2"><label for="evStart">시작일</label><input id="evStart" type="date"/></div>
+        <div class="row2"><label for="evEnd">종료일</label><input id="evEnd" type="date"/></div>
+      </div>
+      <div class="row2"><label for="evUrl">연결 링크</label><input id="evUrl" type="url" placeholder="선택: 밴드·공지 링크"/></div>
+      <div class="actions"><button id="evSave" class="primary">저장</button></div>
+      <div class="hint">* 저장하면 localStorage에 보존됩니다. 내보내기/가져오기로 백업·이동 가능.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', init);
+
+function init(){
+  const locale='ko-KR', WEEK_STARTS_ON_SUN=true;
+  const STORAGE_KEY='customEvents.v1';
+  const monthLabel=document.getElementById('monthLabel');
+  const grid=document.getElementById('grid');
+  const weekdaysEl=document.querySelector('.weekdays');
+  const list=document.getElementById('eventList');
+  const listTitle=document.getElementById('listTitle');
+  const actions=document.getElementById('panelActions');
+  const metaCount=document.getElementById('metaCount');
+
+  // 저장/불러오기 요소
+  const btnExport=document.getElementById('btnExport');
+  const btnImport=document.getElementById('btnImport');
+  const btnClear=document.getElementById('btnClear');
+  const importFile=document.getElementById('importFile');
+
+  // 시간표 모달 요소
+  const ttModal=document.getElementById('ttModal');
+  const ttClose=document.getElementById('ttClose');
+  const ttConfirm=document.getElementById('ttConfirm');
+  const ttLoad=document.getElementById('ttLoad');
+  const ttFile=document.getElementById('ttFile');
+  const ttGrade=document.getElementById('ttGrade');
+  const ttClass=document.getElementById('ttClass');
+  const ttWeekday=document.getElementById('ttWeekday');
+  const ttResult=document.getElementById('ttResult');
+
+  // 수행 모달
+  const pfModal=document.getElementById('pfModal');
+  const pfClose=document.getElementById('pfClose');
+  const pfOpen=document.getElementById('pfOpen');
+  const pfSubject=document.getElementById('pfSubject');
+
+  // 일정추가 모달
+  const evModal=document.getElementById('evModal');
+  const evClose=document.getElementById('evClose');
+  const evSave=document.getElementById('evSave');
+  const evType=document.getElementById('evType');
+  const evTitle=document.getElementById('evTitle');
+  const evDate=document.getElementById('evDate');
+  const evStart=document.getElementById('evStart');
+  const evEnd=document.getElementById('evEnd');
+  const evUrl=document.getElementById('evUrl');
+  const singleRow=document.getElementById('singleRow');
+  const rangeRows=document.getElementById('rangeRows');
+
+
+  document.querySelectorAll('input[name="evMode"]').forEach(r=>{
+    r.addEventListener('change',()=>{
+      const mode=document.querySelector('input[name="evMode"]:checked').value;
+      singleRow.style.display = (mode==='single')?'grid':'none';
+      rangeRows.style.display  = (mode==='range')?'block':'none';
+    });
+  });
+
+  // 수행평가 링크
+  const PERF_URLS = {
+    '영어':'https://www.band.us/band/94138893/member/A7G74FRO3SCK3SHXJSLKTAWADM%3D%3D%3D%3D%3D%3D/post'
+    // '국어':'...', '수학':'...', '화학':'...'
+  };
+
+  // ===== 기본 이벤트(학교 일정) + 사용자 일정 로드 =====
+  const EVENTS_BASE=[
+    {type:'school', title:'개학(전학년)', date:'2025-08-06'},
+    {type:'holiday', title:'광복절', date:'2025-08-15'},
+    {type:'school', title:'호연지기(2학년)', start:'2025-08-25', end:'2025-08-26'},
+    {type:'exam', title:'전국연합(1,2)·수능모의(3)', date:'2025-09-03'},
+    {type:'exam', title:'1회 지필평가(전학년)', start:'2025-09-26', end:'2025-10-02'},
+    {type:'holiday', title:'개천절', date:'2025-10-03'},
+    {type:'holiday', title:'추석',   date:'2025-10-06'},
+    {type:'holiday', title:'추석',   date:'2025-10-07'},
+    {type:'holiday', title:'대체휴일', date:'2025-10-08'},
+    {type:'holiday', title:'한글날', date:'2025-10-09'},
+    {type:'holiday', title:'재량휴업일', date:'2025-10-10'},
+    {type:'exam',    title:'전국연합평가(1,2,3학년)', date:'2025-10-14'},
+    {type:'school',  title:'개교기념일', date:'2025-10-20'},
+    {type:'exam', title:'대학수학능력시험', date:'2025-11-13'},
+    {type:'exam', title:'2회 지필평가(1,2학년)', start:'2025-12-04', end:'2025-12-10'},
+    {type:'school', title:'자율적교육과정운영', start:'2025-12-11', end:'2025-12-12'},
+    {type:'school', title:'교내축제', date:'2025-12-19'},
+    {type:'school', title:'방학식', date:'2025-12-23'},
+    {type:'holiday', title:'성탄절', date:'2025-12-25'},
+    {type:'holiday', title:'겨울방학', start:'2025-12-24', end:'2026-01-30'},
+    {type:'school', title:'등교(전학년)', date:'2026-02-02'},
+    {type:'school', title:'종업식(1,2)·졸업식(3)', date:'2026-02-04'},
+    {type:'holiday', title:'봄방학', start:'2026-02-05', end:'2026-02-28'}
+  ];
+let EVENTS_USER = loadUserEvents();
+
+function loadUserEvents(){
+  try{
+    const raw = JSON.parse(localStorage.getItem('customEvents.v1') || '[]');
+    const fixed = normalizeUserArray(raw);
+    if (JSON.stringify(raw)!==JSON.stringify(fixed)){
+      localStorage.setItem('customEvents.v1', JSON.stringify(fixed));
+    }
+    return fixed;
+  }catch{ return []; }
+}
+
+function saveUserEvents(){
+  localStorage.setItem('customEvents.v1', JSON.stringify(EVENTS_USER));
+  if (typeof updateMeta === 'function') updateMeta();
+}
+
+  function updateMeta(){
+  const metaCount=document.getElementById('metaCount');
+  if (metaCount) metaCount.textContent = `저장된 사용자 일정: ${EVENTS_USER.length}건`;
+}
+
+
+  // ===== 유틸 =====
+  const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const parse=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+  const inRange=(t,s,e)=>t>=parse(s)&&t<=parse(e);
+  function allEvents(){ return [...EVENTS_BASE, ...EVENTS_USER]; }
+  function eventsOn(dateStr){const t=parse(dateStr);return allEvents().filter(ev=>ev.date?ev.date===dateStr:inRange(t,ev.start,ev.end));}
+  function monthEvents(y,m){
+  const st=new Date(y,m,1), en=new Date(y,m+1,0);
+  const base = EVENTS_BASE.filter(ev=>{
+    if(ev.date){ const d=new Date(ev.date); return d>=st&&d<=en; }
+    const s=new Date(ev.start), e=new Date(ev.end); return e>=st&&s<=en;
+  }).map(ev=>({...ev,_src:'base'}));
+
+  const user = EVENTS_USER.filter(ev=>{
+    if(ev.date){ const d=new Date(ev.date); return d>=st&&d<=en; }
+    const s=new Date(ev.start), e=new Date(ev.end); return e>=st&&s<=en;
+  }).map(ev=>({...ev,_src:'user'}));
+
+  return [...base, ...user];
+}
+
+  function hasBlocked(dateStr){ return eventsOn(dateStr).length>0; }
+
+  // ===== 요일 헤더 =====
+  const weekSun = Array.from({length:7},(_,i)=>new Intl.DateTimeFormat(locale,{weekday:'short'}).format(new Date(2025,5,i+1)));
+  const names = WEEK_STARTS_ON_SUN ? weekSun : weekSun.slice(1).concat(weekSun.slice(0,1));
+  weekdaysEl.innerHTML = names.map(d=>`<div>${d}</div>`).join('');
+
+  // ===== 시간표 로딩 & 정규화 =====
+  let TIMETABLE = {};
+  let RAW_TIMETABLE = {};
+  const FALLBACK_TIMETABLE = { "1-1": { "mon":["체육","정보","미술","사회","사회","국어","과실"],
+                                        "tue":["공강","한국","영어","과학","과학","정보","수학"],
+                                        "wed":["정보","수학","진로","국어","한국","창체","창체"],
+                                        "thu":["사회","공강","미술","영어","한국","사회","영어"],
+                                        "fri":["자율","수학","과학","공강","과학","체육","국어"] } };
+
+  const DAY_MAP = {'월':'mon','화':'tue','수':'wed','목':'thu','금':'fri','Mon':'mon','Tue':'tue','Wed':'wed','Thu':'thu','Fri':'fri'};
+  function normalizeTimetable(data){
+    const out={}, topKeys=Object.keys(data||{});
+    const normDays = obj=>{
+      const r={}; for(const k of Object.keys(obj||{})){
+        const kk = ['mon','tue','wed','thu','fri'].includes(k) ? k : (DAY_MAP[k]||k);
+        r[kk] = obj[k];
+      } return r;
+    };
+    const put=(g,c,s)=>{ if(!g||!c) return; out[`${+g}-${+c}`]=normDays(s); };
+
+    // 평면형: "1-1": {...}
+    if(topKeys.length && topKeys.every(k=>/\d+\s*-\s*\d+/.test(k))){
+      for(const k of topKeys){ const [g,c]=k.split('-').map(s=>s.replace(/[^\d]/g,'')); put(g,c,data[k]); }
+      return out;
+    }
+    // 계층형: { "1학년": { "1반": {...}, ... }, ... }
+    for(const gKey of topKeys){
+      const g=(gKey.match(/\d+/)||[])[0]; const v=data[gKey];
+      if(g && v && typeof v==='object'){
+        for(const cKey of Object.keys(v)){ const c=(cKey.match(/\d+/)||[])[0]; if(c) put(g,c,v[cKey]); }
+      }
+    }
+    return out;
+  }
+
+  loadTimetable(); // 시작 시 로드
+  async function loadTimetable(){
+    try{
+      const res = await fetch('timetable.json', {cache:'no-store'});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      RAW_TIMETABLE = data;
+      TIMETABLE = normalizeTimetable(data);
+      const keys = Object.keys(TIMETABLE);
+      if(!keys.length) alert('timetable.json을 읽었지만 반 목록을 찾지 못했어요. “시간표 불러오기”로 파일을 직접 지정해 주세요.');
+      console.info('[TIMETABLE] normalized keys:', keys);
+      populateClassOptions();
+    }catch(err){
+      console.warn('[TIMETABLE] fetch 실패 → 예시 데이터 사용', err);
+      TIMETABLE = FALLBACK_TIMETABLE;
+      populateClassOptions();
+    }
+  }
+
+  // 파일에서 시간표 불러오기
+  ttLoad.onclick=()=>ttFile.click();
+  ttFile.onchange=e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        const data=JSON.parse(reader.result);
+        RAW_TIMETABLE=data; TIMETABLE=normalizeTimetable(data);
+        const keys=Object.keys(TIMETABLE);
+        if(!keys.length) { alert('이 JSON에서는 반 목록을 찾지 못했어요. 키를 "1-1" 형태로 맞춰 주세요.'); return; }
+        console.info('[TIMETABLE] imported keys:', keys);
+        populateClassOptions(); alert('시간표를 불러왔습니다.');
+      }catch{ alert('JSON 파싱 실패'); }
+      ttFile.value='';
+    };
+    reader.readAsText(file,'utf-8');
+  };
+
+  // 반 목록 채우기
+  function populateClassOptions(){
+    const g=ttGrade.value;
+    const keys=Object.keys(TIMETABLE).filter(k=>k.startsWith(g+'-')).sort((a,b)=>+a.split('-')[1]-+b.split('-')[1]);
+    const prev=ttClass.value;
+    ttClass.innerHTML = keys.length
+      ? keys.map(k=>`<option value="${k.split('-')[1]}">${k}</option>`).join('')
+      : '<option value="1">1-1</option>';
+    if(prev && keys.some(k=>k.endsWith('-'+prev))) ttClass.value=prev;
+  }
+  ttGrade.addEventListener('change',populateClassOptions);
+
+  // ===== 상태 & 렌더 =====
+  let current = new Date(); current.setDate(1);
+  let selectedDate = null;
+  render(current);
+
+  function render(date){
+    const y=date.getFullYear(), m=date.getMonth();
+    monthLabel.textContent=new Intl.DateTimeFormat(locale,{year:'numeric',month:'long'}).format(date);
+    listTitle.textContent=`${monthLabel.textContent} 일정`;
+
+    // 리스트
+const ME = monthEvents(y, m);
+list.innerHTML = ME.map(ev => {
+  const when = ev.date ? ev.date : `${ev.start} ~ ${ev.end}`;
+  const meta  = TYPE_META[ev.type] || { label: ev.type, color: '#e5e7eb' };
+  const k     = meta.label;
+  const color = meta.color;
+
+  // 알람 기준일(d0): 단일=ev.date, 기간=시작일
+  const d0 = ev.date || ev.start;
+
+  // data-date 항상 보장 (기간 일정도 시작일을 data-date로)
+  const dataAttr = ev.date
+    ? `data-date="${ev.date}"`
+    : `data-date="${ev.start}" data-start="${ev.start}" data-end="${ev.end}"`;
+
+  const linkHtml = ev.url ? ` <a href="${ev.url}" class="ext" target="_blank" rel="noopener">밴드</a>` : '';
+  // 사용자 일정일 때만 삭제 버튼
+  const delHtml = ev._src==='user' ? `<button class="mini ... del" data-id="${ev._id||''}" title="이 일정 삭제">삭제</button>` : '';
+
+  // 고정 ID 보장: 주어진 ev._id 없으면 제목+날짜로 생성
+  const rid = ev._id || `ev_${d0}_${(ev.title||'event').replace(/\s+/g,'_').slice(0,40)}`;
+
+  return `<div class="row" ${dataAttr} data-src="${ev._src||'base'}" data-id="${rid}">
+            <div class="k" style="color:${color}">${k}</div>
+            <div class="t">${ev.title}${linkHtml}</div>
+            <div class="d">${when}</div>
+            <div class="ops">${delHtml}</div>
+          </div>`;
+}).join('') || `<div style="opacity:.7">이번 달 일정이 없습니다.</div>`;
+
+
+    // 캘린더
+    const first=new Date(y,m,1), last=new Date(y,m+1,0);
+    const dow0=first.getDay(); const lead=(dow0-(WEEK_STARTS_ON_SUN?0:1)+7)%7;
+    const prevLast=new Date(y,m,0).getDate();
+    const leading=Array.from({length:lead},(_,i)=>({d:new Date(y,m-1,prevLast-(lead-1-i)), muted:true}));
+    const curr=Array.from({length:last.getDate()},(_,i)=>({d:new Date(y,m,i+1), muted:false}));
+    const need = (7 - ((leading.length+curr.length)%7))%7;
+    const trailing=Array.from({length:need},(_,i)=>({d:new Date(y,m+1,i+1), muted:true}));
+    const all=[...leading,...curr,...trailing];
+    const today=fmt(new Date());
+
+    grid.innerHTML = all.map(({d,muted})=>{
+      const ds=fmt(d);
+      const dots = !muted ? Array.from(new Set(eventsOn(ds).map(e=>e.type))).slice(0,3).map(t=>`<span class="dot ${t}"></span>`).join('') : '';
+      let fillClass=''; if(!muted){ const evs=eventsOn(ds); if(evs.length){ const order=['holiday','exam','perform','school','personal']; const top=order.find(t=>evs.some(e=>e.type===t))||evs[0].type; fillClass=`fill ${top}`; } } 
+      const dow=d.getDay();
+      return `<button class="cell ${muted?'muted':''} ${ds===today?'today':''} ${fillClass}" data-date="${ds}" data-dow="${dow}">
+        <div class="day">${d.getDate()}</div><div class="events">${dots}</div>
+      </button>`;
+    }).join('');
+
+    weekdaysEl.querySelectorAll('div').forEach(w=>w.classList.remove('active'));
+
+    if (selectedDate){
+      const cell = grid.querySelector(`.cell[data-date="${selectedDate}"]`);
+      if (cell){ cell.classList.add('selected'); weekdaysEl.querySelectorAll('div').forEach((w,i)=>w.classList.toggle('active', i===+cell.dataset.dow)); }
+    }
+  }
+
+  // ===== 선택/하이라이트 =====
+  function selectDate(dateStr){
+    selectedDate = dateStr;
+    const cell = grid.querySelector(`.cell[data-date="${dateStr}"]`); if (!cell) return;
+    grid.querySelectorAll('.cell.selected').forEach(c=>c.classList.remove('selected'));
+    cell.classList.add('selected');
+    const dow = +cell.dataset.dow;
+    weekdaysEl.querySelectorAll('div').forEach((w,i)=>w.classList.toggle('active', i===dow));
+    showAction(dateStr);
+  }
+  function gotoAndSelect(dateStr){
+    const dt = parse(dateStr);
+    if (dt.getFullYear()!==current.getFullYear() || dt.getMonth()!==current.getMonth()){
+      current = new Date(dt.getFullYear(), dt.getMonth(), 1);
+      render(current);
+    }
+    selectDate(dateStr);
+  }
+  function highlightListForDate(dateStr){
+    const rows=document.querySelectorAll('.list .row'); let firstHit=null;
+    rows.forEach(r=>{
+      r.classList.remove('active');
+      const d=r.dataset.date, s=r.dataset.start, e=r.dataset.end;
+      const t=parse(dateStr);
+      const hit = d ? (d===dateStr) : (s && e && t>=parse(s) && t<=parse(e));
+      if(hit){ r.classList.add('active'); if(!firstHit) firstHit=r; }
+    });
+    if(firstHit) firstHit.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+  function highlightOnlyRow(row){
+    document.querySelectorAll('.list .row').forEach(r=>r.classList.remove('active'));
+    row.classList.add('active');
+    row.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+
+  // ===== Glow 근접효과 =====
+  function enableProximity(container){
+    function onMove(e){
+      const x=e.clientX, y=e.clientY;
+      container.querySelectorAll('.glow').forEach(btn=>{
+        const r=btn.getBoundingClientRect();
+        const d=Math.hypot(x-(r.left+r.width/2),y-(r.top+r.height/2));
+        const max=Math.max(r.width,r.height)*2;
+        const p=Math.max(0,1-d/max);
+        const px=((x-r.left)/r.width)*100;
+        const py=((y-r.top)/r.height)*100;
+        btn.style.setProperty('--p', p.toFixed(3));
+        btn.style.setProperty('--x', px+'%');
+        btn.style.setProperty('--y', py+'%');
+      });
+    }
+    container.addEventListener('mousemove', onMove);
+    container.addEventListener('mouseleave', ()=>container.querySelectorAll('.glow').forEach(b=>b.style.setProperty('--p', 0)));
+  }
+  enableProximity(actions);
+
+  // ===== 액션 패널 =====
+function showAction(dateStr){
+  actions.innerHTML = '';
+  const evs = eventsOn(dateStr);
+  const dow = new Date(dateStr).getDay(); // 0=일,6=토
+
+  // 링크 버튼(그대로 유지)
+  evs.filter(ev=>ev.url).forEach(ev=>{
+    const b = document.createElement('button');
+    b.textContent = `밴드: ${ev.title}`;
+    b.onclick = ()=> window.open(ev.url, '_blank', 'noopener');
+    actions.appendChild(b);
+  });
+
+  // 일정 추가 버튼(항상)
+  const addBtn = document.createElement('button');
+  addBtn.textContent = '일정 추가';
+  addBtn.className = 'glow';
+  addBtn.onclick = ()=> openAddEvent(dateStr);
+  toggleTeacherRow(); // 모달 열 때 현재 선택값 기준으로 반영
+  actions.appendChild(addBtn);
+
+  // ───────── 여기 조건이 핵심 ─────────
+  // 휴일/지필평가가 하나라도 있으면 시간표 보기 차단, 그 외(school/personal/없음)는 허용
+  const hasBlockers = evs.some(ev => ev.type==='holiday' || ev.type==='exam');
+  const isWeekday = (dow!==0 && dow!==6);
+
+  if (!hasBlockers && isWeekday){
+    const ttBtn = document.createElement('button');
+    ttBtn.className = 'primary glow';
+    ttBtn.textContent = '시간표 보기';
+    ttBtn.onclick = ()=> openTt(dateStr);
+    actions.appendChild(ttBtn);
+
+    // (선택) 내 수행 보기도 같이 보이게 유지하려면 아래 유지
+    const pfBtn = document.createElement('button');
+    pfBtn.className = 'glow';
+    pfBtn.textContent = '내 수행 보기';
+    pfBtn.onclick = ()=> openPf();
+    actions.appendChild(pfBtn);
+  }
+}
+
+  // 달력/리스트 클릭
+  grid.addEventListener('click', e=>{
+    const cell=e.target.closest('.cell'); if(!cell) return;
+    const dateStr=cell.dataset.date;
+    selectDate(dateStr);
+    highlightListForDate(dateStr);
+  });
+  list.addEventListener('click', e=>{
+  // 외부 링크 클릭은 통과
+  if (e.target.closest('.ext')) return;
+
+  // 삭제 버튼
+  const del = e.target.closest('.del');
+  if (del){
+    e.stopPropagation();
+    const id = del.dataset.id || del.closest('.row')?.dataset.id;
+    if (!id) return;
+    if (!confirm('이 사용자 일정을 삭제할까요?')) return;
+
+    const idx = EVENTS_USER.findIndex(ev=>ev._id===id);
+    if (idx>-1){
+      const anchor = EVENTS_USER[idx].date || EVENTS_USER[idx].start; // 지우고 나서 이동 기준
+      EVENTS_USER.splice(idx,1);
+      saveUserEvents();
+      render(current);
+      if (anchor) gotoAndSelect(anchor);
+    }
+    return;
+  }
+
+  // 일반 선택(날짜로 이동)
+  const row = e.target.closest('.row'); if(!row) return;
+  const dateStr = row.dataset.date || row.dataset.start;
+  gotoAndSelect(dateStr);
+  // 선택 하이라이트 유지 코드가 있으면 그대로 두세요
+});
+
+
+  // ===== 내보내기/가져오기/초기화 =====
+  btnExport.onclick=()=>{
+    const data=JSON.stringify(EVENTS_USER, null, 2);
+    const blob=new Blob([data],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download='my_events.json'; a.click();
+    URL.revokeObjectURL(url);
+  };
+  btnImport.onclick=()=>importFile.click();
+  importFile.onchange=e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        const arr=JSON.parse(reader.result);
+        if(!Array.isArray(arr)) throw 0;
+        EVENTS_USER=arr; saveUserEvents(); render(current);
+      }catch{ alert('JSON 형식이 올바르지 않습니다.'); }
+    };
+    reader.readAsText(file);
+    importFile.value='';
+  };
+  btnClear.onclick=()=>{
+    if(confirm('사용자 일정을 모두 초기화할까요?')){ EVENTS_USER=[]; saveUserEvents(); render(current); }
+  };
+
+  // ===== 시간표 보기 모달 =====
+  function openTt(dateStr){
+    ttResult.innerHTML='';
+    const weekday=['일','월','화','수','목','금','토'][new Date(dateStr).getDay()];
+    ttWeekday.value=weekday; populateClassOptions();
+    ttModal.classList.add('show'); ttModal.setAttribute('aria-hidden','false');
+  }
+  ttClose.onclick=()=>{ttModal.classList.remove('show');ttModal.setAttribute('aria-hidden','true');};
+
+  const KO_DAY_TO_STD={'월':'mon','화':'tue','수':'wed','목':'thu','금':'fri'};
+  ttConfirm.onclick=()=>{
+    const key=`${ttGrade.value}-${ttClass.value}`;
+    const dayKey = KO_DAY_TO_STD[ttWeekday.value] || 'mon';
+    const bucket = TIMETABLE[key] || {};
+    const subjects = bucket[dayKey] || bucket[ttWeekday.value] || [];
+    ttResult.innerHTML=`<div style="font-weight:900;margin-bottom:6px">${key} · ${ttWeekday.value}요일</div>
+      <div class="tt-grid">${subjects.map((s,i)=>`<div class="tt-period"><div class="p">${i+1}교시</div><div class="c">${s||'—'}</div></div>`).join('')}</div>`;
+  };
+
+  // ===== 내 수행 보기 모달 =====
+  function openPf(){ pfModal.classList.add('show'); pfModal.setAttribute('aria-hidden','false'); }
+  pfClose.onclick=()=>{pfModal.classList.remove('show'); pfModal.setAttribute('aria-hidden','true');};
+  pfOpen.onclick=()=>{
+    const sub = pfSubject.value;
+    const url = PERF_URLS[sub];
+    if (!url){ alert(`${sub} 링크가 아직 등록되지 않았어요. 필요하면 주소 알려줘!`); return; }
+    window.open(url, '_blank', 'noopener');
+  };
+
+  // ===== 일정 추가 모달 =====
+function openAddEvent(dateStr){
+  // 모드 초기화
+  document.querySelector('input[name="evMode"][value="single"]').checked = true;
+  singleRow.style.display='grid'; 
+  rangeRows.style.display='none';
+
+  // 날짜 기본값 세팅
+  const base = dateStr || new Date().toISOString().slice(0,10);
+  evDate.value  = base;
+  evStart.value = base;
+  evEnd.value   = base;
+
+  // 필드 초기화
+  evType.value  = 'school';
+  evTitle.value = '';
+  evUrl.value   = '';
+
+  evModal.classList.add('show');
+  evModal.setAttribute('aria-hidden','false');
+}
+
+  evClose.onclick=()=>{evModal.classList.remove('show'); evModal.setAttribute('aria-hidden','true');};
+  const evTeacherRow  = document.getElementById('evTeacherRow');
+  const evTeacherCode = document.getElementById('evTeacherCode');
+
+  // ── 수행평가: 선생코드 토글/검증 ─────────────────────────
+function toggleTeacherRow(){
+  const perform = evType.value === 'perform';
+  evTeacherRow.style.display = perform ? 'grid' : 'none';
+  if (!perform){
+    evTeacherCode.value = '';
+    evSave.disabled = false;        // 다른 구분은 저장 가능
+  }else{
+    validateTeacherCode();          // perform이면 즉시 검증
+  }
+}
+function validateTeacherCode(){
+  const ok = (evTeacherCode.value || '').trim() === '0000';
+  evSave.disabled = !ok;            // 코드 틀리면 저장 버튼 비활성
+  // 시각 피드백(선택): 테두리 색
+  evTeacherCode.style.borderColor = ok ? '' : 'rgba(239,68,68,.6)';
+  return ok;
+}
+// 구분 변경/코드 입력 시 반응
+evType.addEventListener('change', toggleTeacherRow);
+evTeacherCode.addEventListener('input', validateTeacherCode);
+
+
+function toggleTeacherRow(){
+  evTeacherRow.style.display = (evType.value === 'perform') ? 'grid' : 'none';
+  if (evType.value !== 'perform') evTeacherCode.value = '';
+}
+evType.addEventListener('change', toggleTeacherRow);
+
+  document.getElementById('evSave').addEventListener('click', function(){
+  // 현재 선택된 모드/값 읽기
+  const modeEl = document.querySelector('input[name="evMode"]:checked');
+  const mode   = modeEl ? modeEl.value : 'single';
+  const type   = evType.value;
+  // 수행평가면 선생코드 확인(정답: 0000)
+  if (type === 'perform'){
+    const ok = (evTeacherCode.value || '').trim() === '0000';
+    if (!ok){
+      alert('선생코드가 올바르지 않습니다.');
+      return; // 저장 중단
+    }
+  }
+
+  const title  = (evTitle.value || '').trim() || (type==='holiday'?'휴일': type==='exam'?'지필평가':'학교행사');
+  const url    = (evUrl.value || '').trim() || undefined;
+
+  let newEv, anchorDate;
+
+  if (mode === 'single'){
+    if (!evDate.value){ alert('날짜를 선택해 주세요.'); return; }
+    newEv = { _id: genId(), type, title, date: evDate.value };
+    anchorDate = evDate.value;
+  } else {
+    if (!evStart.value || !evEnd.value){ alert('시작일/종료일을 선택해 주세요.'); return; }
+    if (evStart.value > evEnd.value){ alert('종료일이 시작일보다 빠를 수 없어요.'); return; }
+    newEv = { _id: genId(), type, title, start: evStart.value, end: evEnd.value };
+    anchorDate = evStart.value;
+  }
+  if (url) newEv.url = url;
+
+  // 저장 및 화면 반영
+  EVENTS_USER.push(newEv);
+  saveUserEvents();
+
+  const dt = new Date(anchorDate);
+  current = new Date(dt.getFullYear(), dt.getMonth(), 1);
+  render(current);
+  gotoAndSelect(anchorDate);
+  // 일정 리스트에서도 하이라이트
+  if (typeof highlightListForDate === 'function') highlightListForDate(anchorDate);
+
+  // 모달 닫기
+  evModal.classList.remove('show');
+  evModal.setAttribute('aria-hidden','true');
+});
+
+  // 네비게이션
+  document.getElementById('prevBtn').onclick=()=>{ current.setMonth(current.getMonth()-1); render(current); };
+  document.getElementById('nextBtn').onclick=()=>{ current.setMonth(current.getMonth()+1); render(current); };
+  document.getElementById('todayBtn').onclick=()=>{ current=new Date(); current.setDate(1); render(current); };
+}
+// 고유 ID
+const genId = () => 'u'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+
+// 기존에 저장해둔 데이터에 _id가 없다면 자동으로 채워줌
+function normalizeUserArray(arr){
+  if(!Array.isArray(arr)) return [];
+  return arr.map((ev,i)=>{
+    if(ev && typeof ev==='object'){
+      return ev._id ? ev : { _id:'u'+(Date.now()+i).toString(36)+Math.random().toString(36).slice(2,6), ...ev };
+    }
+    return null;
+  }).filter(Boolean);
+}
+// 타입별 라벨/색상
+// 리스트 표시용 라벨/색
+const TYPE_META = {
+  holiday:  { label:'휴일',     color:'var(--holiday)' },
+  exam:     { label:'지필평가', color:'var(--exam)'    },
+  school:   { label:'학교행사', color:'var(--school)'  },
+  personal: { label:'개인일정', color:'var(--personal)'}, // 이미 추가했다면 생략
+  perform:  { label:'수행평가', color:'var(--perform)' }
+};
+
+// 리스트 항목 glow 색 (이미 있으면 perform만 추가)
+const ROW_GLOW = {
+  holiday:  'rgba(239,68,68,.60)',
+  exam:     'rgba(234,179,8,.60)',
+  school:   'rgba(34,197,94,.60)',
+  personal: 'rgba(56,189,248,.60)',
+  perform:  'rgba(167,139,250,.60)',
+  default:  'rgba(99,102,241,.55)'
+};
+
+
+
+</script>
+<script src = 'alarm_lite.js'></script>
+<script src = 'theme_patch_light_weekday_fix.js'></script>
+<script src = 'timetable_builder_plus.js'></script>
+<script src = 'theme_switch_slider_inline.js'></script>
+<script type="module" src="auth.js"></script>
+</body>
+</html>
+
+
